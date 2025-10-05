@@ -1,6 +1,6 @@
 # My-Osquery
 
-A simplified Osquery-like tool for macOS, designed for learning purposes. It collects system data (processes, network connections, system info) and supports SQL-like queries using an in-memory SQLite database.
+My-Osquery is ironically built for your endpoints that collects system data (processes, network connections, system info) and supports SQL-like queries using an in-memory SQLite database.
 
 ## Features
 - **Virtual Tables**: Query system data via `processes`, `network_connections`, and `system_info` tables.
@@ -11,7 +11,7 @@ A simplified Osquery-like tool for macOS, designed for learning purposes. It col
 
 ## Requirements
 - Python 3.8 or higher
-- Libraries: `psutil`, `pyyaml` (install via `pip install psutil pyyaml`)
+- Libraries: `psutil`, `pyyaml` `watchdog` (install via `pip install psutil pyyaml watchdog`)
 - macOS with appropriate permissions (e.g., Full Disk Access for Terminal)
 
 ## Setup
@@ -33,15 +33,26 @@ A simplified Osquery-like tool for macOS, designed for learning purposes. It col
    ```
 4. **Run the Program**:
    ```bash
-   python main.py
+   sudo python main.py
    ```
 
 ## Usage
 Launch the program:
 ```bash
-python main.py
+sudo python main.py
 ```
 The process monitor starts in the background (if `monitor_processes: true` in `config.yaml`), printing new process events to the console and logging them to `logs/processes_log.json`.
+
+If you enable `file_monitor: true` in `config.yaml`, a file monitor will also run in the background. It uses the `watchdog` library to watch for file creation, modification, and deletion events in specified directories (configured in `config.yaml`). Detected file events are printed to the console and logged to `logs/file_events_log.json`.
+
+Similarly, enabling `network_monitor: true` in `config.yaml` starts a network monitor. This component periodically scans active network connections using `psutil`, detects new or closed connections, and logs these events to `logs/network_events_log.json`.
+
+**How it works behind the scenes:**
+- Each monitor (process, file, network) runs in its own background thread.
+- The process monitor polls the system for new processes and logs any that appear since the last check.
+- The file monitor uses OS-level notifications (via `watchdog`) to efficiently detect file system changes in real time.
+- The network monitor periodically checks the list of active network connections and logs any changes.
+- All monitors write structured JSON logs for easy parsing and analysis.
 
 At the `SQL>` prompt, enter SQL queries, for example:
 ```sql
@@ -94,10 +105,48 @@ Use these queries to explore the virtual tables:
   SELECT hostname, os_version, cpu_count, memory_total / 1024 / 1024 AS memory_mb, uptime FROM system_info;
   ```
 
+## Triggering File and Network Monitor Events
+
+To test and see file and network monitor events in action, you can manually create file changes and network connections. Here are example steps:
+
+### 1. Trigger a File Change Event
+
+With file monitoring enabled and `/etc` in your `config.yaml` directories, run:
+
+```bash
+# Create a new file in /etc (requires sudo)
+sudo touch /etc/test_osquery.txt
+
+# Modify the file
+sudo echo "test" >> /etc/test_osquery.txt
+
+# Delete the file
+sudo rm /etc/test_osquery.txt
+```
+
+You should see corresponding "File created", "File modified", and "File deleted" events printed in the console and logged in `logs/file_events_log.json`.
+
+---
+
+### 2. Trigger a Network Connection Event
+
+With network monitoring enabled, open a new terminal and run:
+
+```bash
+# Start a simple TCP server (in one terminal)
+nc -l 12345
+
+# Connect to it from another terminal
+nc localhost 12345
+```
+
+This will create a new network connection, which should be detected by the network monitor. You should see "Active connections" count change in the console and new events in `logs/network_events_log.json`.
+
+
 ### Program Output
 
 <pre>
-MacBook-Air:my-osquery anish$ python main.py
+MacBook-Air:my-osquery anish$ sudo python main.py
 Error fetching network connections: (pid=63107)
 Starting process monitor in background...
 New process: kernel_task (PID: 0)
@@ -153,6 +202,64 @@ SQL> SELECT pid, name, user FROM processes WHERE user = 'root'
 ...
 ...
 ...
+New process: online-authd (PID: 53145)
+New process: bash (PID: 99233)
+New process: ControlCenterHelper (PID: 29603)
+New process: com.apple.SafariPlatformSupport.Helper (PID: 29604)
+New process: cloudphotod (PID: 8105)
+New process: splunkd (PID: 950)
+New process: splunkd (PID: 951)
+New process: DiskUnmountWatcher (PID: 9151)
+New process: passd (PID: 69580)
+New process: Code Helper (GPU) (PID: 97277)
+New process: ssh-agent (PID: 53205)
+New process: simdiskimaged (PID: 69596)
+New process: ssh-agent (PID: 29663)
+New process: distnoted (PID: 69602)
+New process: ssh-agent (PID: 49127)
+New process: distnoted (PID: 1001)
+New process: distnoted (PID: 1002)
+New process: ssh-agent (PID: 89065)
+New process: nc (PID: 52212)
+New process: mdbulkimport (PID: 1013)
+New process: IMAutomaticHistoryDeletionAgent (PID: 11255)
+New process: IOUserBluetoothSerialDriver (PID: 11256)
+New process: IOUserBluetoothSerialDriver (PID: 11257)
+New process: Electron (PID: 97274)
+New process: chrome_crashpad_handler (PID: 97276)
+New process: nc (PID: 52221)
+New process: Code Helper (PID: 97278)
+New process: amsaccountsd (PID: 54704)
+New process: amsengagementd (PID: 54705)
+New process: syncdefaultsd (PID: 54706)
+New process: swcd (PID: 54707)
+Active connections: 7
+127.0.0.1:55151 -> 127.0.0.1:8000 (Status: ESTABLISHED)
+127.0.0.1:8000 -> 127.0.0.1:55151 (Status: ESTABLISHED)
+192.168.29.79:55042 -> 51.132.193.104:443 (Status: ESTABLISHED)
+2405:201:8:7832:f871:928f:722c:bcf9:52010 -> 2404:6800:4003:c00::bc:5228 (Status: ESTABLISHED)
+192.168.29.79:54641 -> 140.82.114.26:443 (Status: ESTABLISHED)
+127.0.0.1:49154 -> 127.0.0.1:9997 (Status: ESTABLISHED)
+127.0.0.1:9997 -> 127.0.0.1:49154 (Status: ESTABLISHED)
+Active connections: 8
+127.0.0.1:55151 -> 127.0.0.1:8000 (Status: ESTABLISHED)
+127.0.0.1:8000 -> 127.0.0.1:55151 (Status: ESTABLISHED)
+192.168.29.79:55042 -> 51.132.193.104:443 (Status: ESTABLISHED)
+2405:201:8:7832:f871:928f:722c:bcf9:52010 -> 2404:6800:4003:c00::bc:5228 (Status: ESTABLISHED)
+192.168.29.79:54641 -> 140.82.114.26:443 (Status: ESTABLISHED)
+192.168.29.79:55306 -> 162.159.140.229:443 (Status: ESTABLISHED)
+127.0.0.1:49154 -> 127.0.0.1:9997 (Status: ESTABLISHED)
+127.0.0.1:9997 -> 127.0.0.1:49154 (Status: ESTABLISHED)
+Active connections: 5
+192.168.29.79:55042 -> 51.132.193.104:443 (Status: ESTABLISHED)
+2405:201:8:7832:f871:928f:722c:bcf9:52010 -> 2404:6800:4003:c00::bc:5228 (Status: ESTABLISHED)
+192.168.29.79:54641 -> 140.82.114.26:443 (Status: ESTABLISHED)
+127.0.0.1:49154 -> 127.0.0.1:9997 (Status: ESTABLISHED)
+127.0.0.1:9997 -> 127.0.0.1:49154 (Status: ESTABLISHED)
+File created: /private/etc/test.txt
+File modified: /private/etc
+File deleted: /private/etc/test.txt
+File modified: /private/etc
 </pre>
 
 ### Logs: processes_log.json

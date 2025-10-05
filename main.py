@@ -7,6 +7,9 @@ from tables.processes import get_processes
 from tables.network import get_network_connections
 from tables.system_info import get_system_info
 from monitoring.process_monitor import start_process_monitor
+# from monitoring.file_monitor import start_file_monitor
+from monitoring.network_monitor import start_network_monitor
+import os
 
 def setup_database():
     """Set up in-memory SQLite database and populate virtual tables."""
@@ -60,9 +63,20 @@ def setup_database():
         raise
 
 def log_results(results, table_name):
-    """Log query results to a JSON file."""
+    """Log query results and monitoring events to a JSON file."""
     try:
-        with open(f'logs/{table_name}_log.json', 'a') as f:
+        # Ensure logs directory exists
+        os.makedirs('logs', exist_ok=True)
+
+        # Special handling for monitoring events
+        if table_name == 'file_monitor':
+            log_file = 'logs/file_monitor_log.json'
+        elif table_name == 'network_monitor':
+            log_file = 'logs/network_monitor_log.json'
+        else:
+            log_file = f'logs/{table_name}_log.json'
+
+        with open(log_file, 'a') as f:
             json.dump(results, f, indent=2)
             f.write('\n')
     except IOError as e:
@@ -105,6 +119,29 @@ def main():
         monitor_thread = threading.Thread(target=start_process_monitor, args=(stop_event,))
         monitor_thread.daemon = True  # Exit thread when main program exits
         monitor_thread.start()
+
+    # Start file monitor(s) in background for each directory in config
+    file_monitor_config = config.get('monitor_files', {})
+    if file_monitor_config.get('enabled', False):
+        # Import here to avoid circular import
+        from monitoring.file_monitor import start_file_monitor
+        directories = file_monitor_config.get('directories', [])
+        if not directories:
+            print("No directories specified for file monitoring.")
+        else:
+            for directory in directories:
+                print(f"Starting file monitor in background for {directory}...")
+                file_thread = threading.Thread(target=start_file_monitor, args=(stop_event, directory))
+                file_thread.daemon = True
+                file_thread.start()
+
+
+    # Start network monitor in background
+    if config.get('monitor_network', False):
+        print("Starting network monitor in background...")
+        network_monitor_thread = threading.Thread(target=start_network_monitor, args=(stop_event,))
+        network_monitor_thread.daemon = True
+        network_monitor_thread.start()
 
     # CLI loop
     print("Welcome to My-Osquery! Enter SQL queries or 'exit' to quit.")

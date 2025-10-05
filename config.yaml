@@ -1,2 +1,8 @@
 monitor_processes: true
+monitor_files:
+  enabled: true
+  directories:
+    - /etc
+    - /var/log
+monitor_network: true
 log_path: logs/
