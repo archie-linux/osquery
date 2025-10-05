@@ -1,6 +1,6 @@
 import psutil
 import time
-import json
+from utils import log_results, insert_process_event
 
 def start_process_monitor(stop_event):
     """Monitor new processes and log them until stop_event is set."""
@@ -15,16 +15,16 @@ def start_process_monitor(stop_event):
                     event = {
                         'pid': pid,
                         'name': proc.name(),
+                        'action': 'started',
                         'timestamp': time.time()
                     }
                     print(f"New process: {event['name']} (PID: {pid})")
-                    with open('logs/processes_log.json', 'a') as f:
-                        json.dump(event, f)
-                        f.write('\n')
+                    log_results(event, "processes")
+                    insert_process_event(event)
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
             known_pids.update(new_pids)
-            time.sleep(1)
+            time.sleep(5)  # Sleep for 5 seconds to reduce event spam
         except Exception as e:
             print(f"Error in process monitor: {e}")
-            time.sleep(1)
+            time.sleep(5)

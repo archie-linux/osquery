@@ -10,11 +10,12 @@ from monitoring.process_monitor import start_process_monitor
 # from monitoring.file_monitor import start_file_monitor
 from monitoring.network_monitor import start_network_monitor
 import os
+from utils import set_db_cursor, log_results
 
 def setup_database():
     """Set up in-memory SQLite database and populate virtual tables."""
     try:
-        conn = sqlite3.connect(':memory:')  # In-memory database
+        conn = sqlite3.connect(':memory:', check_same_thread=False)
         cursor = conn.cursor()
 
         # Create tables
@@ -34,6 +35,49 @@ def setup_database():
             CREATE TABLE system_info (
                 hostname TEXT, os_version TEXT, cpu_count INTEGER,
                 memory_total INTEGER, uptime REAL
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE file_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT,
+                path TEXT,
+                timestamp REAL
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE network_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                laddr TEXT,
+                raddr TEXT,
+                status TEXT,
+                timestamp REAL
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS process_events (
+                pid INTEGER,
+                name TEXT,
+                action TEXT,
+                timestamp REAL,
+                PRIMARY KEY (pid, name, action)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS file_events (
+                event_type TEXT,
+                path TEXT,
+                timestamp REAL,
+                PRIMARY KEY (event_type, path)
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS network_events (
+                laddr TEXT,
+                raddr TEXT,
+                status TEXT,
+                timestamp REAL,
+                PRIMARY KEY (laddr, raddr, status)
             )
         ''')
 
@@ -62,26 +106,6 @@ def setup_database():
         print(f"Database setup error: {e}")
         raise
 
-def log_results(results, table_name):
-    """Log query results and monitoring events to a JSON file."""
-    try:
-        # Ensure logs directory exists
-        os.makedirs('logs', exist_ok=True)
-
-        # Special handling for monitoring events
-        if table_name == 'file_monitor':
-            log_file = 'logs/file_monitor_log.json'
-        elif table_name == 'network_monitor':
-            log_file = 'logs/network_monitor_log.json'
-        else:
-            log_file = f'logs/{table_name}_log.json'
-
-        with open(log_file, 'a') as f:
-            json.dump(results, f, indent=2)
-            f.write('\n')
-    except IOError as e:
-        print(f"Error writing to log file: {e}")
-
 def run_query(cursor, query, table_name):
     """Execute a SQL query and return results."""
     try:
@@ -106,6 +130,7 @@ def main():
     # Set up database
     try:
         conn, cursor = setup_database()
+        set_db_cursor(cursor)
     except Exception as e:
         print(f"Failed to set up database: {e}")
         return
