@@ -1,0 +1,2 @@
+monitor_processes: true
+log_path: logs/
